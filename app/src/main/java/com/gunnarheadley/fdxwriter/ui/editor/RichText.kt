@@ -24,6 +24,17 @@ object RichText {
     private const val ITALIC = StyledRun.ITALIC
     private const val UNDERLINE = StyledRun.UNDERLINE
 
+    /**
+     * A stable, distinct color for a character name so the same character reads the same color
+     * throughout the script. Hue is derived from the (trimmed, upper-cased) name; saturation and
+     * lightness are fixed for legibility on the page.
+     */
+    fun characterColor(name: String): Color {
+        val key = name.trim().uppercase()
+        val hue = ((key.hashCode() % 360) + 360) % 360
+        return Color.hsl(hue.toFloat(), 0.65f, 0.42f)
+    }
+
     fun toTextFieldValue(runs: List<StyledRun>): TextFieldValue =
         TextFieldValue(annotatedString = runsToAnnotatedString(runs))
 

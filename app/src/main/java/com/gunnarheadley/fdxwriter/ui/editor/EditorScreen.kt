@@ -135,6 +135,7 @@ fun EditorScreen(
 
     val reveal by viewModel.revealRequest.collectAsStateWithLifecycle()
     val searchState by viewModel.search.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     val notes = document.model.notes
     val characterNames = remember(document) {
         paragraphs.asSequence()
@@ -295,6 +296,9 @@ fun EditorScreen(
                         paragraph = para,
                         notes = highlightsByKey[para.key].orEmpty(),
                         searchHighlights = searchHighlightsByKey[para.key].orEmpty(),
+                        characterColor = if (settings.characterColorsEnabled &&
+                            para.type == ElementType.CHARACTER && para.plainText.isNotBlank()
+                        ) RichText.characterColor(para.plainText) else null,
                         requestFocus = para.key == pendingFocusKey,
                         caretTarget = if (para.key == pendingFocusKey) pendingCaret else null,
                         onFocusConsumed = {
@@ -372,6 +376,7 @@ private fun ParagraphRow(
     paragraph: ScreenplayParagraph,
     notes: List<ParagraphNote>,
     searchHighlights: List<RichText.HighlightSpan>,
+    characterColor: Color?,
     requestFocus: Boolean,
     caretTarget: Int?,
     onFocusConsumed: () -> Unit,
@@ -442,7 +447,8 @@ private fun ParagraphRow(
                     }
                 }
             },
-            textStyle = textStyleFor(paragraph.type, colors.onSurface, colors.primary),
+            textStyle = textStyleFor(paragraph.type, colors.onSurface, colors.primary)
+                .let { if (characterColor != null) it.copy(color = characterColor) else it },
             visualTransformation = RichText.highlightTransformation(
                 uppercase = paragraph.type.displaysUppercase,
                 highlights = notes.map { RichText.HighlightSpan(it.start, it.end, it.color) } + searchHighlights,

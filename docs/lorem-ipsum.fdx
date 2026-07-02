@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Scene Heading">
+      <Text>INT. LOREM IPSUM NEWSROOM - DAY</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Rows of desks hum with quiet urgency. MARCUS hunches over a keyboard while ADAORA reads over his shoulder.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>MARCUS</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. We run it tonight or we don't run it at all.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ADAORA</Text>
+    </Paragraph>
+    <Paragraph Type="Parenthetical">
+      <Text>(unconvinced)</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Ut enim ad minim veniam, quis nostrud exercitation ullamco. One more source, Marcus. That's all I'm asking.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>MARCUS</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.</Text>
+    </Paragraph>
+    <Paragraph Type="Transition">
+      <Text>CUT TO:</Text>
+    </Paragraph>
+    <Paragraph Type="Scene Heading">
+      <Text>EXT. RIVERSIDE PARKING GARAGE - NIGHT</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>Excepteur sint occaecat cupidatat non proident. Rain sheets across empty concrete. A single car idles. DEEP THROAT waits in the shadows.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>DEEP THROAT</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Sunt in culpa qui officia deserunt mollit anim id est laborum. Follow the money. Always follow the money.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ADAORA</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Neque porro quisquam est qui dolorem ipsum quia dolor sit amet. And if the money leads back to us?</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>DEEP THROAT</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Quis autem vel eum iure reprehenderit qui in ea voluptate.</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>ADAORA turns up her collar and walks back into the rain.</Text>
+    </Paragraph>
+    <Paragraph Type="Transition">
+      <Text>FADE OUT.</Text>
+    </Paragraph>
+  </Content>
+</FinalDraft>

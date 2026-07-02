@@ -158,12 +158,17 @@ private fun BeatCanvas(
 ) {
     var scale by remember { mutableStateOf(0f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    var selectedId by remember { mutableStateOf<String?>(null) }
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .pointerInput(Unit) {
+                // Tapping empty canvas clears the selection.
+                detectTapGestures { selectedId = null }
+            }
             .pointerInput(Unit) {
                 detectTransformGestures { _, panChange, zoom, _ ->
                     scale = (scale * zoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
@@ -191,7 +196,15 @@ private fun BeatCanvas(
         if (scale > 0f) {
             for (beat in beats) {
                 key(beat.id) {
-                    BeatCardView(beat = beat, scale = scale, pan = pan, onMove = onMove, onEdit = onEdit)
+                    BeatCardView(
+                        beat = beat,
+                        scale = scale,
+                        pan = pan,
+                        selected = beat.id == selectedId,
+                        onSelect = { selectedId = beat.id },
+                        onMove = onMove,
+                        onEdit = onEdit,
+                    )
                 }
             }
         }
@@ -211,6 +224,8 @@ private fun BeatCardView(
     beat: Beat,
     scale: Float,
     pan: Offset,
+    selected: Boolean,
+    onSelect: () -> Unit,
     onMove: (String, Int, Int) -> Unit,
     onEdit: (Beat) -> Unit,
 ) {
@@ -222,27 +237,46 @@ private fun BeatCardView(
     val titleSp = (beat.height * scale * 0.18f).coerceIn(9f, 18f).sp
     val bodySp = (beat.height * scale * 0.13f).coerceIn(8f, 14f).sp
 
+    // Read pos/scale/pan during composition so each drag delta re-places the card live. Reading
+    // them only inside offset { } (layout phase) left the card visually stationary until the drag
+    // ended and the model commit forced a recomposition.
+    val offsetX = (pos.x * scale + pan.x).roundToInt()
+    val offsetY = (pos.y * scale + pan.y).roundToInt()
+
     Box(
         modifier = Modifier
-            .offset { IntOffset((pos.x * scale + pan.x).roundToInt(), (pos.y * scale + pan.y).roundToInt()) }
+            .offset { IntOffset(offsetX, offsetY) }
             .size(
                 width = with(density) { (beat.width * scale).toDp() },
                 height = with(density) { (beat.height * scale).toDp() },
             )
             .clip(RoundedCornerShape(6.dp))
             .background(cardColor)
-            .border(1.dp, Color(0x33000000), RoundedCornerShape(6.dp))
-            .pointerInput(beat.id) {
-                detectTapGestures { onEdit(beat) }
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else Color(0x33000000),
+                shape = RoundedCornerShape(6.dp),
+            )
+            .pointerInput(beat.id, selected) {
+                // Tap an unselected card to select it; tap the selected card to edit it.
+                detectTapGestures { if (selected) onEdit(beat) else onSelect() }
             }
-            .pointerInput(beat.id, scale) {
-                detectDragGestures(
-                    onDragEnd = { onMove(beat.id, pos.x.roundToInt(), pos.y.roundToInt()) },
-                ) { change, drag ->
-                    change.consume()
-                    pos += drag / scale
-                }
-            }
+            .then(
+                // Only a selected card consumes drags to move; otherwise the drag falls through so
+                // the canvas pans instead of the card moving accidentally.
+                if (selected) {
+                    Modifier.pointerInput(beat.id, scale) {
+                        detectDragGestures(
+                            onDragEnd = { onMove(beat.id, pos.x.roundToInt(), pos.y.roundToInt()) },
+                        ) { change, drag ->
+                            change.consume()
+                            pos += drag / scale
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .padding(6.dp),
     ) {
         Column {

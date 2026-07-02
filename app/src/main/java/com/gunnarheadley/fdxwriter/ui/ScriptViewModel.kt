@@ -226,6 +226,10 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { settingsStore.setAutoSaveIntervalSeconds(seconds) }
     }
 
+    fun setCharacterColorsEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setCharacterColorsEnabled(enabled) }
+    }
+
     fun undo() {
         val doc = _uiState.value.document ?: return
         val previous = undoStack.removeLastOrNull() ?: return

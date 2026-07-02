@@ -16,6 +16,7 @@ data class AppSettings(
     val autoSaveEnabled: Boolean = false,
     val autoSaveIntervalSeconds: Int = 60,
     val noteAuthor: String = "",
+    val characterColorsEnabled: Boolean = true,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -29,6 +30,7 @@ class SettingsStore(context: Context) {
             autoSaveEnabled = prefs[AUTO_SAVE_ENABLED] ?: false,
             autoSaveIntervalSeconds = prefs[AUTO_SAVE_INTERVAL] ?: 60,
             noteAuthor = prefs[NOTE_AUTHOR] ?: "",
+            characterColorsEnabled = prefs[CHARACTER_COLORS] ?: true,
         )
     }
 
@@ -44,11 +46,16 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[NOTE_AUTHOR] = author }
     }
 
+    suspend fun setCharacterColorsEnabled(enabled: Boolean) {
+        dataStore.edit { it[CHARACTER_COLORS] = enabled }
+    }
+
     companion object {
         const val MIN_INTERVAL = 10
         const val MAX_INTERVAL = 3600
         private val AUTO_SAVE_ENABLED = booleanPreferencesKey("auto_save_enabled")
         private val AUTO_SAVE_INTERVAL = intPreferencesKey("auto_save_interval_seconds")
         private val NOTE_AUTHOR = stringPreferencesKey("note_author")
+        private val CHARACTER_COLORS = booleanPreferencesKey("character_colors_enabled")
     }
 }

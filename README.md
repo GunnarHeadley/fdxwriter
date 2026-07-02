@@ -4,6 +4,14 @@ An Android app for reading and editing **Final Draft** screenplays (`.fdx`) on t
 
 FDX Writer opens real Final Draft files, lets you edit the screenplay, beat board, and notes, and writes them back **losslessly**: anything it doesn't touch is preserved so the file stays compatible with Final Draft.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/script_example.png" alt="Screenplay editor with colour-coded character names" width="45%">
+  &nbsp;&nbsp;
+  <img src="docs/beat_board_example.png" alt="Beat board with draggable, colour-coded cards" width="45%">
+</p>
+
 ## Features
 
 - **Open, create, and save `.fdx`** files via the Android Storage Access Framework — edit in place or start a new blank script.
@@ -14,6 +22,7 @@ FDX Writer opens real Final Draft files, lets you edit the screenplay, beat boar
 - **Undo / redo** and **auto-save** with a configurable interval.
 - **Search** and **find / replace** across the whole script.
 - **Character-name autofill** drawn from names already used in the script.
+- **Colour-coded character names** — each speaker gets a consistent colour so scenes are easy to scan (toggle in settings).
 - **Net-change tracking** — Save only enables when the document actually differs from what's on disk.
 
 ## Tech stack
@@ -29,7 +38,7 @@ FDX Writer opens real Final Draft files, lets you edit the screenplay, beat boar
 The guiding principle is a **lossless DOM round-trip**: the entire `.fdx` XML is parsed into a DOM, only the editable sections (Content paragraphs, beat list items / display board, and script notes) are regenerated on save, and everything else is written back exactly as it was.
 
 ```
-app/src/main/java/com/example/fdxwriter/
+app/src/main/java/com/gunnarheadley/fdxwriter/
 ├── data/
 │   ├── fdx/     # FDX model, parser, serializer, offset mapping, colours, text edits
 │   └── repo/    # ScriptRepository (SAF I/O), SettingsStore, RecentFilesStore (DataStore)

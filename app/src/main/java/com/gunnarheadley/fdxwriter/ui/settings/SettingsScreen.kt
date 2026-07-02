@@ -72,6 +72,23 @@ fun SettingsScreen(viewModel: ScriptViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
+                    "Color character names",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Switch(
+                    checked = settings.characterColorsEnabled,
+                    onCheckedChange = { viewModel.setCharacterColorsEnabled(it) },
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
                     "Auto-save",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,
