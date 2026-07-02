@@ -1,0 +1,19 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Typewriter key face -->
+    <path
+        android:fillColor="#F5F3EC"
+        android:pathData="M30,32 H78 A6,6 0 0 1 84,38 V70 A6,6 0 0 1 78,76 H30 A6,6 0 0 1 24,70 V38 A6,6 0 0 1 30,32 Z" />
+    <!-- Key top bevel highlight -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,32 H78 A6,6 0 0 1 84,38 V44 H24 V38 A6,6 0 0 1 30,32 Z" />
+    <!-- FDX monogram -->
+    <path
+        android:fillColor="#2B3A55"
+        android:fillType="nonZero"
+        android:pathData="M30,44 H34 V64 H30 Z M30,44 H42 V48 H30 Z M30,52 H40 V56 H30 Z M46,44 H50 V64 H46 Z M46,44 H58 V48 H46 Z M46,60 H58 V64 H46 Z M56,48 H60 V60 H56 Z M64,44 L68,44 L78,64 L74,64 Z M74,44 L78,44 L68,64 L64,64 Z" />
+</vector>

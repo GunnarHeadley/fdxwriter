@@ -1,0 +1,4 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. Compose drives the actual theming; this just removes the ActionBar. -->
+    <style name="Theme.Fdxwriter" parent="Theme.Material3.DayNight.NoActionBar" />
+</resources>
