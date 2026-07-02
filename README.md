@@ -71,9 +71,8 @@ The pure logic — FDX parse / serialize / round-trip, offset mapping, and find/
 ## Limitations
 
 - Editing a paragraph preserves **bold / italic / underline**; other Final Draft run attributes (font, size, colour) on an edited paragraph are not user-editable.
-- Note anchors are not re-positioned live while large amounts of text are inserted or deleted above them.
 - Export, print/PDF, and repagination are out of scope.
 
 ## License
 
-No license is included yet. Add one (for example, MIT) before publishing if you want to allow reuse.
+Released under the [MIT License](LICENSE).
