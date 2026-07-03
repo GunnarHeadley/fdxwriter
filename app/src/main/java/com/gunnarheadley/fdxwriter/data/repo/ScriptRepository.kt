@@ -6,7 +6,9 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.system.ErrnoException
 import android.system.Os
+import com.gunnarheadley.fdxwriter.data.export.PdfExporter
 import com.gunnarheadley.fdxwriter.data.fdx.FdxDocument
+import com.gunnarheadley.fdxwriter.data.fdx.ScreenplayParagraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -51,6 +53,13 @@ class ScriptRepository(context: Context) {
             }
         }
     }
+
+    suspend fun exportPdf(uri: Uri, paragraphs: List<ScreenplayParagraph>, title: String): Unit =
+        withContext(Dispatchers.IO) {
+            appContext.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                PdfExporter.export(paragraphs, out, title)
+            } ?: throw IOException("Unable to create the PDF.")
+        }
 
     fun displayName(uri: Uri): String? = try {
         appContext.contentResolver

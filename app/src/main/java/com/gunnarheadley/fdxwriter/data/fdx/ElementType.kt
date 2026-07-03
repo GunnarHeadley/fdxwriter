@@ -48,6 +48,18 @@ enum class ElementType(val fdxName: String) {
         get() = this == SCENE_HEADING || this == CHARACTER || this == TRANSITION ||
             this == SHOT || this == CAST_LIST || this == NEW_ACT || this == END_OF_ACT
 
+    /**
+     * Approximate number of Courier characters that fit on one line of this element in a standard
+     * screenplay layout. Shared by page estimation and PDF wrapping.
+     */
+    val columnWidth: Int
+        get() = when (this) {
+            DIALOGUE -> 35
+            PARENTHETICAL -> 25
+            CHARACTER -> 38
+            else -> 60
+        }
+
     val displayName: String get() = fdxName
 
     companion object {

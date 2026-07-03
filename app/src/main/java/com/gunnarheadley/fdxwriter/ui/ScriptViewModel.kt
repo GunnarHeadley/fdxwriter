@@ -20,6 +20,7 @@ import com.gunnarheadley.fdxwriter.data.repo.RecentFile
 import com.gunnarheadley.fdxwriter.data.repo.RecentFilesStore
 import com.gunnarheadley.fdxwriter.data.repo.ScriptRepository
 import com.gunnarheadley.fdxwriter.data.repo.SettingsStore
+import com.gunnarheadley.fdxwriter.data.repo.ThemeMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -228,6 +229,27 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCharacterColorsEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsStore.setCharacterColorsEnabled(enabled) }
+    }
+
+    fun setEditorFontSize(size: Int) {
+        viewModelScope.launch { settingsStore.setEditorFontSize(size) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settingsStore.setThemeMode(mode) }
+    }
+
+    fun exportPdf(uri: Uri) {
+        val doc = _uiState.value.document ?: return
+        val title = _uiState.value.fileName?.substringBeforeLast(".") ?: "Screenplay"
+        viewModelScope.launch {
+            try {
+                repository.exportPdf(uri, doc.model.paragraphs, title)
+                _uiState.value = _uiState.value.copy(errorMessage = "PDF exported.")
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = "PDF export failed: ${e.message}")
+            }
+        }
     }
 
     fun undo() {
@@ -441,6 +463,11 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         if (i >= 0) list[i] = list[i].copy(left = left, top = top, dirty = true)
     }
 
+    fun resizeBeat(id: String, width: Int, height: Int) = mutateBeats { list ->
+        val i = list.indexOfFirst { it.id == id }
+        if (i >= 0) list[i] = list[i].copy(width = width, height = height, dirty = true)
+    }
+
     fun updateBeat(id: String, title: String, bodyLines: List<String>, color: String) = mutateBeats { list ->
         val i = list.indexOfFirst { it.id == id }
         if (i >= 0) list[i] = list[i].copy(title = title, bodyLines = bodyLines, color = color, dirty = true)
@@ -498,30 +525,6 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         val start = mapper.positionToOffset(index, focusedSelStart)
         val end = mapper.positionToOffset(index, focusedSelEnd)
         return createNote(doc, start, end)
-    }
-
-    /** The note overlapping the current focused selection, if any. */
-    fun noteAtSelection(): NoteAnnotation? {
-        val doc = _uiState.value.document ?: return null
-        val index = doc.model.paragraphs.indexOfFirst { it.key == focusedParagraphKey }.takeIf { it >= 0 }
-            ?: return null
-        val mapper = doc.offsetMapper()
-        val a = mapper.positionToOffset(index, focusedSelStart)
-        val b = mapper.positionToOffset(index, focusedSelEnd)
-        return doc.model.notes.firstOrNull { overlaps(a, b, it.start, it.end) }
-    }
-
-    /** Delete the note overlapping the current selection. Returns true if one was removed. */
-    fun removeNoteAtSelection(): Boolean {
-        val target = noteAtSelection() ?: return false
-        deleteNote(target.id)
-        return true
-    }
-
-    private fun overlaps(a: Int, b: Int, s: Int, e: Int): Boolean {
-        val lo = minOf(a, b)
-        val hi = maxOf(a, b)
-        return if (lo == hi) lo in s..e else lo < e && s < hi
     }
 
     private fun createNote(doc: FdxDocument, start: Int, end: Int): String {
