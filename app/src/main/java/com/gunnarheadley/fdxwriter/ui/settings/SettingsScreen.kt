@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gunnarheadley.fdxwriter.data.repo.ThemeMode
 import com.gunnarheadley.fdxwriter.ui.ScriptViewModel
 import kotlin.math.roundToInt
 
@@ -39,6 +41,7 @@ fun SettingsScreen(viewModel: ScriptViewModel, onBack: () -> Unit) {
     // Local state keeps text/slider input responsive; changes are persisted to DataStore as they occur.
     var author by remember { mutableStateOf(settings.noteAuthor) }
     var interval by remember { mutableStateOf(settings.autoSaveIntervalSeconds.toFloat()) }
+    var fontSize by remember { mutableStateOf(settings.editorFontSize.toFloat()) }
 
     Scaffold(
         topBar = {
@@ -112,6 +115,31 @@ fun SettingsScreen(viewModel: ScriptViewModel, onBack: () -> Unit) {
                     valueRange = 10f..600f,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text("Editor text size: ${fontSize.roundToInt()}", style = MaterialTheme.typography.bodyLarge)
+            Slider(
+                value = fontSize,
+                onValueChange = { fontSize = it },
+                onValueChangeFinished = { viewModel.setEditorFontSize(fontSize.roundToInt()) },
+                valueRange = 12f..28f,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(24.dp))
+            Text("Theme", style = MaterialTheme.typography.bodyLarge)
+            ThemeMode.entries.forEach { mode ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = settings.themeMode == mode,
+                        onClick = { viewModel.setThemeMode(mode) },
+                    )
+                    Text(mode.name.lowercase().replaceFirstChar { it.uppercase() })
+                }
             }
         }
     }
