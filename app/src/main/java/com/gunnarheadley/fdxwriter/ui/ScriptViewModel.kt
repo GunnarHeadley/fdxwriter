@@ -16,6 +16,7 @@ import com.gunnarheadley.fdxwriter.data.fdx.ScriptModel
 import com.gunnarheadley.fdxwriter.data.fdx.StyledRun
 import com.gunnarheadley.fdxwriter.data.fdx.TextEdits
 import com.gunnarheadley.fdxwriter.data.repo.AppSettings
+import com.gunnarheadley.fdxwriter.data.repo.DocumentStamp
 import com.gunnarheadley.fdxwriter.data.repo.RecentFile
 import com.gunnarheadley.fdxwriter.data.repo.RecentFilesStore
 import com.gunnarheadley.fdxwriter.data.repo.ScriptRepository
@@ -200,6 +201,12 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
     /** The model as last written to (or read from) disk, used to detect zero net change. */
     private var savedModel: ScriptModel? = null
 
+    /** On-disk fingerprint captured at open/last-save, to detect external modification. */
+    private var openedStamp: DocumentStamp? = null
+
+    private val _saveConflict = MutableStateFlow(false)
+    val saveConflict: StateFlow<Boolean> = _saveConflict.asStateFlow()
+
     init {
         // Auto-save loop: when enabled, persist a dirty document once per configured interval.
         viewModelScope.launch {
@@ -283,6 +290,8 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         redoStack.clear()
         coalesceKey = null
         savedModel = null
+        openedStamp = null
+        _saveConflict.value = false
         _search.value = SearchUiState()
     }
 
@@ -295,6 +304,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
                 val name = repository.displayName(uri) ?: uri.lastPathSegment ?: "script.fdx"
                 clearHistory()
                 savedModel = document.model
+                openedStamp = repository.stamp(uri)
                 _uiState.value = ScriptUiState(document = document, fileName = name, uri = uri)
                 recentFilesStore.add(uri.toString(), name)
             } catch (e: Exception) {
@@ -311,19 +321,49 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         val uri = state.uri ?: return
         val document = state.document ?: return
         viewModelScope.launch {
-            _uiState.value = state.copy(isLoading = true, errorMessage = null)
-            try {
-                repository.save(uri, document)
-                savedModel = document.model
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    isDirty = _uiState.value.document?.model != savedModel,
-                    savedAt = System.currentTimeMillis(),
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message ?: "Couldn't save the file.")
+            val current = repository.stamp(uri)
+            if (DocumentStamp.isExternallyModified(openedStamp, current)) {
+                // The file changed on disk since we opened/last saved it — don't clobber it.
+                _saveConflict.value = true
+                return@launch
             }
+            performSave(uri, document)
         }
+    }
+
+    /** Save without the external-change check (the user chose to overwrite). */
+    fun forceSave() {
+        val uri = _uiState.value.uri ?: return
+        val document = _uiState.value.document ?: return
+        viewModelScope.launch { performSave(uri, document) }
+    }
+
+    private suspend fun performSave(uri: Uri, document: FdxDocument) {
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        try {
+            repository.save(uri, document)
+            savedModel = document.model
+            openedStamp = repository.stamp(uri)
+            _saveConflict.value = false
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                isDirty = _uiState.value.document?.model != savedModel,
+                savedAt = System.currentTimeMillis(),
+            )
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message ?: "Couldn't save the file.")
+        }
+    }
+
+    /** Discard local edits and re-read the file from disk (resolves a conflict by taking theirs). */
+    fun reload() {
+        val uri = _uiState.value.uri ?: return
+        _saveConflict.value = false
+        open(uri, persistPermission = false)
+    }
+
+    fun clearConflict() {
+        _saveConflict.value = false
     }
 
     /** Create a brand-new empty script at [uri], write it, and open it in the editor. */
@@ -337,6 +377,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
                 val name = repository.displayName(uri) ?: uri.lastPathSegment ?: "script.fdx"
                 clearHistory()
                 savedModel = document.model
+                openedStamp = repository.stamp(uri)
                 _uiState.value = ScriptUiState(document = document, fileName = name, uri = uri)
                 recentFilesStore.add(uri.toString(), name)
             } catch (e: Exception) {
@@ -356,6 +397,8 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
                 takePersistablePermission(uri)
                 repository.save(uri, document)
                 savedModel = document.model
+                openedStamp = repository.stamp(uri)
+                _saveConflict.value = false
                 val name = repository.displayName(uri) ?: uri.lastPathSegment ?: "script.fdx"
                 _uiState.value = _uiState.value.copy(
                     uri = uri, fileName = name, isLoading = false,

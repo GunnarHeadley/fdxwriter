@@ -3,6 +3,7 @@ package com.gunnarheadley.fdxwriter.data.repo
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.system.ErrnoException
 import android.system.Os
@@ -14,6 +15,19 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
+
+/** A lightweight fingerprint of a document on disk, used to detect external modification. */
+data class DocumentStamp(val lastModified: Long, val size: Long) {
+    companion object {
+        /**
+         * True when the file changed on disk between [opened] (captured at open/last save) and
+         * [current]. Best-effort: if either stamp is unknown (null), assume no external change
+         * rather than block saving.
+         */
+        fun isExternallyModified(opened: DocumentStamp?, current: DocumentStamp?): Boolean =
+            opened != null && current != null && current != opened
+    }
+}
 
 /** Loads and saves FDX documents through the Storage Access Framework (content URIs). */
 class ScriptRepository(context: Context) {
@@ -65,6 +79,28 @@ class ScriptRepository(context: Context) {
         appContext.contentResolver
             .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Best-effort last-modified + size fingerprint for [uri]. Returns null if the provider
+     * doesn't report either (some do not), in which case external-change detection is skipped.
+     */
+    fun stamp(uri: Uri): DocumentStamp? = try {
+        appContext.contentResolver.query(
+            uri,
+            arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val lastModified = if (cursor.isNull(0)) 0L else cursor.getLong(0)
+                val size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
+                if (lastModified <= 0L && size < 0L) null else DocumentStamp(lastModified, size)
+            } else {
+                null
+            }
+        }
     } catch (e: Exception) {
         null
     }

@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -145,6 +146,7 @@ fun EditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showOutline by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    var showReloadConfirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val focusedType = focusedKey?.let { key -> paragraphs.firstOrNull { it.key == key }?.type }
@@ -152,6 +154,7 @@ fun EditorScreen(
     val reveal by viewModel.revealRequest.collectAsStateWithLifecycle()
     val searchState by viewModel.search.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val saveConflict by viewModel.saveConflict.collectAsStateWithLifecycle()
     val notes = document.model.notes
     val characterNames = remember(document) {
         paragraphs.asSequence()
@@ -275,6 +278,7 @@ fun EditorScreen(
                                 DropdownMenuItem(text = { Text("Save As") }, onClick = { menuOpen = false; onSaveAs() })
                                 DropdownMenuItem(text = { Text("Export PDF") }, onClick = { menuOpen = false; onExportPdf() })
                                 DropdownMenuItem(text = { Text("Open") }, onClick = { menuOpen = false; onOpen() })
+                                DropdownMenuItem(text = { Text("Reload") }, onClick = { menuOpen = false; if (state.isDirty) showReloadConfirm = true else viewModel.reload() })
                                 DropdownMenuItem(text = { Text("Close") }, onClick = { menuOpen = false; viewModel.close() })
                                 HorizontalDivider()
                                 DropdownMenuItem(text = { Text("Beat Board") }, onClick = { menuOpen = false; onOpenBeatBoard() })
@@ -468,6 +472,42 @@ fun EditorScreen(
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
+
+    if (saveConflict) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearConflict() },
+            title = { Text("File changed on disk") },
+            text = {
+                Text(
+                    "This file was changed by another app or device since you opened it. " +
+                        "Overwriting will discard those changes.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearConflict(); onSaveAs() }) { Text("Save a copy") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { viewModel.reload() }) { Text("Reload") }
+                    TextButton(onClick = { viewModel.forceSave() }) { Text("Overwrite") }
+                }
+            },
+        )
+    }
+
+    if (showReloadConfirm) {
+        AlertDialog(
+            onDismissRequest = { showReloadConfirm = false },
+            title = { Text("Reload from disk?") },
+            text = { Text("This discards your unsaved changes and reloads the saved version of the file.") },
+            confirmButton = {
+                TextButton(onClick = { showReloadConfirm = false; viewModel.reload() }) { Text("Reload") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReloadConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
