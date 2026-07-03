@@ -3,18 +3,14 @@ package com.gunnarheadley.fdxwriter.ui.beatboard
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,8 +20,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +27,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,9 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -63,27 +55,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gunnarheadley.fdxwriter.data.fdx.Beat
 import com.gunnarheadley.fdxwriter.data.fdx.FdxColor
 import com.gunnarheadley.fdxwriter.ui.ScriptViewModel
+import com.gunnarheadley.fdxwriter.ui.common.ColorPicker
 import kotlin.math.roundToInt
 
 private const val MIN_ZOOM = 0.3f
 private const val MAX_ZOOM = 6f
 private const val DEFAULT_ZOOM = 2f
-
-/** Final Draft's built-in beat card colors. Custom colors are also available via the picker. */
-private val BEAT_COLORS = listOf(
-    "#FFFFFFFFFFFF", // White
-    "#EBEB62627B7B", // Red
-    "#EFEFA4A46262", // Orange
-    "#E5E5CBCB6C6C", // Yellow
-    "#929290900000", // Olive
-    "#8F8FC3C36A6A", // Green
-    "#6363A7A7EFEF", // Blue
-    "#9A9AAEAEDBDB", // Steel
-    "#AFAF9393E8E8", // Purple
-    "#E2E29898DDDD", // Magenta
-    "#B2B27C7C7373", // Brown
-    "#C0C0C0C0C0C0", // Gray
-)
+private const val MIN_BEAT_SIZE = 120f
 
 /** Pan/zoom beat board: draggable cards backed by the FDX ListItems + Beat DisplayBoard. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,6 +107,7 @@ fun BeatBoardScreen(viewModel: ScriptViewModel, onBack: () -> Unit) {
             beats = beats,
             modifier = Modifier.padding(padding),
             onMove = viewModel::moveBeat,
+            onResize = viewModel::resizeBeat,
             onEdit = { editing = it },
         )
     }
@@ -154,6 +133,7 @@ private fun BeatCanvas(
     beats: List<Beat>,
     modifier: Modifier = Modifier,
     onMove: (String, Int, Int) -> Unit,
+    onResize: (String, Int, Int) -> Unit,
     onEdit: (Beat) -> Unit,
 ) {
     var scale by remember { mutableStateOf(0f) }
@@ -203,6 +183,7 @@ private fun BeatCanvas(
                         selected = beat.id == selectedId,
                         onSelect = { selectedId = beat.id },
                         onMove = onMove,
+                        onResize = onResize,
                         onEdit = onEdit,
                     )
                 }
@@ -227,15 +208,19 @@ private fun BeatCardView(
     selected: Boolean,
     onSelect: () -> Unit,
     onMove: (String, Int, Int) -> Unit,
+    onResize: (String, Int, Int) -> Unit,
     onEdit: (Beat) -> Unit,
 ) {
     val density = LocalDensity.current
     var pos by remember(beat.id, beat.left, beat.top) {
         mutableStateOf(Offset(beat.left.toFloat(), beat.top.toFloat()))
     }
+    var cardSize by remember(beat.id, beat.width, beat.height) {
+        mutableStateOf(Size(beat.width.toFloat(), beat.height.toFloat()))
+    }
     val cardColor = FdxColor.toArgb(beat.color)?.let { Color(it) } ?: Color.White
-    val titleSp = (beat.height * scale * 0.18f).coerceIn(9f, 18f).sp
-    val bodySp = (beat.height * scale * 0.13f).coerceIn(8f, 14f).sp
+    val titleSp = (cardSize.height * scale * 0.18f).coerceIn(9f, 18f).sp
+    val bodySp = (cardSize.height * scale * 0.13f).coerceIn(8f, 14f).sp
 
     // Read pos/scale/pan during composition so each drag delta re-places the card live. Reading
     // them only inside offset { } (layout phase) left the card visually stationary until the drag
@@ -247,8 +232,8 @@ private fun BeatCardView(
         modifier = Modifier
             .offset { IntOffset(offsetX, offsetY) }
             .size(
-                width = with(density) { (beat.width * scale).toDp() },
-                height = with(density) { (beat.height * scale).toDp() },
+                width = with(density) { (cardSize.width * scale).toDp() },
+                height = with(density) { (cardSize.height * scale).toDp() },
             )
             .clip(RoundedCornerShape(6.dp))
             .background(cardColor)
@@ -265,7 +250,7 @@ private fun BeatCardView(
                 // Only a selected card consumes drags to move; otherwise the drag falls through so
                 // the canvas pans instead of the card moving accidentally.
                 if (selected) {
-                    Modifier.pointerInput(beat.id, scale) {
+                    Modifier.pointerInput(beat.id, scale, beat.left, beat.top) {
                         detectDragGestures(
                             onDragEnd = { onMove(beat.id, pos.x.roundToInt(), pos.y.roundToInt()) },
                         ) { change, drag ->
@@ -300,6 +285,30 @@ private fun BeatCardView(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+
+        if (selected) {
+            // Drag this corner grip to resize the card; the top-left stays anchored.
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(topStart = 8.dp, bottomEnd = 6.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f))
+                    .pointerInput(beat.id, scale, beat.width, beat.height) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                onResize(beat.id, cardSize.width.roundToInt(), cardSize.height.roundToInt())
+                            },
+                        ) { change, drag ->
+                            change.consume()
+                            cardSize = Size(
+                                (cardSize.width + drag.x / scale).coerceAtLeast(MIN_BEAT_SIZE),
+                                (cardSize.height + drag.y / scale).coerceAtLeast(MIN_BEAT_SIZE),
+                            )
+                        }
+                    },
+            )
         }
     }
 }
@@ -351,96 +360,3 @@ private fun BeatEditDialog(
         },
     )
 }
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ColorPicker(selected: String, onSelect: (String) -> Unit) {
-    var showCustom by remember {
-        mutableStateOf(BEAT_COLORS.none { it.equals(selected, ignoreCase = true) })
-    }
-
-    Column {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            for (fdx in BEAT_COLORS) {
-                val swatch = FdxColor.toArgb(fdx)?.let { Color(it) } ?: Color.White
-                ColorDot(
-                    fill = SolidColor(swatch),
-                    selected = !showCustom && fdx.equals(selected, ignoreCase = true),
-                    onClick = { showCustom = false; onSelect(fdx) },
-                )
-            }
-            ColorDot(
-                fill = Brush.sweepGradient(
-                    listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red),
-                ),
-                selected = showCustom,
-                onClick = { showCustom = true },
-                label = "+",
-            )
-        }
-        if (showCustom) {
-            Spacer(Modifier.height(12.dp))
-            CustomColorSliders(
-                argb = FdxColor.toArgb(selected) ?: 0xFFCCCCCC.toInt(),
-                onChange = { onSelect(FdxColor.fromArgb(it)) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ColorDot(fill: Brush, selected: Boolean, onClick: () -> Unit, label: String? = null) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(fill)
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else Color(0x55000000),
-                shape = CircleShape,
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (label != null) Text(label, color = Color.White, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun CustomColorSliders(argb: Int, onChange: (Int) -> Unit) {
-    val r = (argb shr 16) and 0xFF
-    val g = (argb shr 8) and 0xFF
-    val b = argb and 0xFF
-    Column {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(argb)),
-        )
-        ChannelSlider("R", r) { onChange(packArgb(it, g, b)) }
-        ChannelSlider("G", g) { onChange(packArgb(r, it, b)) }
-        ChannelSlider("B", b) { onChange(packArgb(r, g, it)) }
-    }
-}
-
-@Composable
-private fun ChannelSlider(label: String, value: Int, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.width(18.dp))
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it.roundToInt()) },
-            valueRange = 0f..255f,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-private fun packArgb(r: Int, g: Int, b: Int): Int =
-    (0xFF shl 24) or ((r and 0xFF) shl 16) or ((g and 0xFF) shl 8) or (b and 0xFF)

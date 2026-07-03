@@ -36,9 +36,16 @@ fun AppScreen(viewModel: ScriptViewModel) {
         ActivityResultContracts.CreateDocument(FDX_CREATE_MIME),
     ) { uri -> uri?.let { viewModel.createNew(it) } }
 
+    val exportPdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf"),
+    ) { uri -> uri?.let { viewModel.exportPdf(it) } }
+
     val onOpen: () -> Unit = { openLauncher.launch(FDX_OPEN_MIME_TYPES) }
     val onNew: () -> Unit = { newLauncher.launch("Untitled.fdx") }
     val onSaveAs: () -> Unit = { saveAsLauncher.launch(state.fileName ?: "script.fdx") }
+    val onExportPdf: () -> Unit = {
+        exportPdfLauncher.launch((state.fileName?.substringBeforeLast(".") ?: "script") + ".pdf")
+    }
 
     LaunchedEffect(state.isOpen) { if (!state.isOpen) screen = OpenScreen.Editor }
 
@@ -49,6 +56,7 @@ fun AppScreen(viewModel: ScriptViewModel) {
                 listState = editorListState,
                 onOpen = onOpen,
                 onSaveAs = onSaveAs,
+                onExportPdf = onExportPdf,
                 onOpenBeatBoard = { screen = OpenScreen.BeatBoard },
                 onOpenNotes = { screen = OpenScreen.Notes },
                 onOpenSettings = { screen = OpenScreen.Settings },

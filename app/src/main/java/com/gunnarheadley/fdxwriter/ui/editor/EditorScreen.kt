@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.contextmenu.builder.item
@@ -40,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -78,17 +80,20 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gunnarheadley.fdxwriter.data.fdx.ElementType
 import com.gunnarheadley.fdxwriter.data.fdx.FdxColor
 import com.gunnarheadley.fdxwriter.data.fdx.NoteAnnotation
 import com.gunnarheadley.fdxwriter.data.fdx.ScreenplayParagraph
+import com.gunnarheadley.fdxwriter.data.fdx.ScriptStats
 import com.gunnarheadley.fdxwriter.data.fdx.StyledRun
 import com.gunnarheadley.fdxwriter.ui.ScriptViewModel
 import com.gunnarheadley.fdxwriter.ui.SearchUiState
@@ -104,6 +109,13 @@ class FocusedField(
     val setValue: (TextFieldValue) -> Unit,
 )
 
+/** SmartType suggestions offered for scene headings and transitions. */
+private val SCENE_OPENERS = listOf("INT. ", "EXT. ", "INT./EXT. ", "EST. ")
+private val TRANSITIONS = listOf(
+    "CUT TO:", "DISSOLVE TO:", "SMASH CUT TO:", "MATCH CUT TO:",
+    "FADE IN:", "FADE OUT.", "FADE TO BLACK.",
+)
+
 /** A note overlapping a paragraph, in that paragraph's local character coordinates. */
 data class ParagraphNote(val start: Int, val end: Int, val color: Color, val note: NoteAnnotation)
 
@@ -114,6 +126,7 @@ fun EditorScreen(
     listState: LazyListState,
     onOpen: () -> Unit,
     onSaveAs: () -> Unit,
+    onExportPdf: () -> Unit,
     onOpenBeatBoard: () -> Unit,
     onOpenNotes: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -130,6 +143,9 @@ fun EditorScreen(
     var pendingCaret by remember { mutableStateOf<Int?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    var showOutline by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val focusedType = focusedKey?.let { key -> paragraphs.firstOrNull { it.key == key }?.type }
 
@@ -145,6 +161,24 @@ fun EditorScreen(
             .distinctBy { it.uppercase() }
             .toList()
     }
+    val sceneHeadingTexts = remember(document) {
+        paragraphs.asSequence()
+            .filter { it.type == ElementType.SCENE_HEADING }
+            .map { it.plainText.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.uppercase() }
+            .toList()
+    }
+    val sceneList = remember(document) {
+        paragraphs.mapIndexedNotNull { i, p ->
+            if (p.type == ElementType.SCENE_HEADING) {
+                i to p.plainText.trim().ifEmpty { "(untitled scene)" }
+            } else {
+                null
+            }
+        }
+    }
+    val sceneHeadingCandidates = remember(sceneHeadingTexts) { SCENE_OPENERS + sceneHeadingTexts }
     var editingNote by remember { mutableStateOf<NoteAnnotation?>(null) }
     var pendingNoteEditId by remember { mutableStateOf<String?>(null) }
 
@@ -231,19 +265,25 @@ fun EditorScreen(
                 TopAppBar(
                     title = { Text(state.fileName ?: "Script", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     actions = {
+                        TextButton(onClick = { viewModel.openSearch() }) { Text("Find") }
                         TextButton(onClick = { viewModel.save() }, enabled = state.isDirty) {
                             Text(if (state.isDirty) "Save*" else "Saved")
                         }
                         Box {
                             TextButton(onClick = { menuOpen = true }) { Text("...") }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                DropdownMenuItem(text = { Text("Find / Replace") }, onClick = { menuOpen = false; viewModel.openSearch() })
-                                DropdownMenuItem(text = { Text("Beat Board") }, onClick = { menuOpen = false; onOpenBeatBoard() })
-                                DropdownMenuItem(text = { Text("Notes") }, onClick = { menuOpen = false; onOpenNotes() })
-                                DropdownMenuItem(text = { Text("Settings") }, onClick = { menuOpen = false; onOpenSettings() })
                                 DropdownMenuItem(text = { Text("Save As") }, onClick = { menuOpen = false; onSaveAs() })
+                                DropdownMenuItem(text = { Text("Export PDF") }, onClick = { menuOpen = false; onExportPdf() })
                                 DropdownMenuItem(text = { Text("Open") }, onClick = { menuOpen = false; onOpen() })
                                 DropdownMenuItem(text = { Text("Close") }, onClick = { menuOpen = false; viewModel.close() })
+                                HorizontalDivider()
+                                DropdownMenuItem(text = { Text("Beat Board") }, onClick = { menuOpen = false; onOpenBeatBoard() })
+                                DropdownMenuItem(text = { Text("Notes") }, onClick = { menuOpen = false; onOpenNotes() })
+                                HorizontalDivider()
+                                DropdownMenuItem(text = { Text("Settings") }, onClick = { menuOpen = false; onOpenSettings() })
+                                HorizontalDivider()
+                                DropdownMenuItem(text = { Text("Outline") }, onClick = { menuOpen = false; showOutline = true })
+                                DropdownMenuItem(text = { Text("Statistics") }, onClick = { menuOpen = false; showStats = true })
                             }
                         }
                     },
@@ -263,9 +303,15 @@ fun EditorScreen(
         },
         bottomBar = {
             Column {
-                CharacterSuggestionBar(
-                    field = if (focusedType == ElementType.CHARACTER) focusedField else null,
-                    names = characterNames,
+                val suggestionCandidates = when (focusedType) {
+                    ElementType.CHARACTER -> characterNames
+                    ElementType.SCENE_HEADING -> sceneHeadingCandidates
+                    ElementType.TRANSITION -> TRANSITIONS
+                    else -> emptyList()
+                }
+                SuggestionBar(
+                    field = if (suggestionCandidates.isNotEmpty()) focusedField else null,
+                    candidates = suggestionCandidates,
                 )
                 FormatBar(
                     focused = focusedField,
@@ -299,6 +345,7 @@ fun EditorScreen(
                         characterColor = if (settings.characterColorsEnabled &&
                             para.type == ElementType.CHARACTER && para.plainText.isNotBlank()
                         ) RichText.characterColor(para.plainText) else null,
+                        fontSize = settings.editorFontSize,
                         requestFocus = para.key == pendingFocusKey,
                         caretTarget = if (para.key == pendingFocusKey) pendingCaret else null,
                         onFocusConsumed = {
@@ -332,7 +379,7 @@ fun EditorScreen(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .width(20.dp),
+                    .width(32.dp),
             )
             AnimatedVisibility(
                 visible = showSaved,
@@ -369,6 +416,59 @@ fun EditorScreen(
             },
         )
     }
+
+    if (showOutline) {
+        ModalBottomSheet(onDismissRequest = { showOutline = false }) {
+            if (sceneList.isEmpty()) {
+                Text("No scenes yet.", modifier = Modifier.padding(16.dp))
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                    items(sceneList) { (index, text) ->
+                        Text(
+                            text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    scope.launch { listState.animateScrollToItem(index) }
+                                    showOutline = false
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showStats) {
+        val stats = remember(document) { ScriptStats.compute(paragraphs) }
+        ModalBottomSheet(onDismissRequest = { showStats = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+            ) {
+                Text("Statistics", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Text("Scenes: ${stats.sceneCount}")
+                Text("Words: ${stats.wordCount}")
+                Text("Estimated pages: ~${stats.estimatedPages}")
+                if (stats.dialogueByCharacter.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Dialogue blocks by character", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    stats.dialogueByCharacter.forEach { (name, count) ->
+                        Text("$name \u2014 $count")
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -377,6 +477,7 @@ private fun ParagraphRow(
     notes: List<ParagraphNote>,
     searchHighlights: List<RichText.HighlightSpan>,
     characterColor: Color?,
+    fontSize: Int,
     requestFocus: Boolean,
     caretTarget: Int?,
     onFocusConsumed: () -> Unit,
@@ -447,7 +548,7 @@ private fun ParagraphRow(
                     }
                 }
             },
-            textStyle = textStyleFor(paragraph.type, colors.onSurface, colors.primary)
+            textStyle = textStyleFor(paragraph.type, colors.onSurface, colors.primary, fontSize)
                 .let { if (characterColor != null) it.copy(color = characterColor) else it },
             visualTransformation = RichText.highlightTransformation(
                 uppercase = paragraph.type.displaysUppercase,
@@ -540,20 +641,31 @@ private fun FastScrollbar(listState: LazyListState, modifier: Modifier = Modifie
     ) {
         val density = LocalDensity.current
         val trackPx = with(density) { maxHeight.toPx() }
+        val minThumbPx = with(density) { 48.dp.toPx() }
         val thumbFraction = (visible.toFloat() / total).coerceIn(0.08f, 1f)
-        val thumbPx = trackPx * thumbFraction
+        val thumbPx = (trackPx * thumbFraction).coerceIn(minThumbPx.coerceAtMost(trackPx), trackPx)
         val travel = (trackPx - thumbPx).coerceAtLeast(1f)
         val progress = (listState.firstVisibleItemIndex.toFloat() / (total - visible)).coerceIn(0f, 1f)
         val thumbTop = travel * progress
+        // A faint full-height track makes the scrollbar easy to see and aim for.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 3.dp)
+                .width(12.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(6.dp))
+                .background(colors.onSurface.copy(alpha = 0.12f)),
+        )
         Box(
             Modifier
                 .align(Alignment.TopEnd)
                 .offset { IntOffset(0, thumbTop.roundToInt()) }
-                .padding(end = 2.dp)
-                .width(8.dp)
+                .padding(end = 3.dp)
+                .width(12.dp)
                 .height(with(density) { thumbPx.toDp() })
-                .clip(RoundedCornerShape(4.dp))
-                .background(colors.primary.copy(alpha = 0.55f)),
+                .clip(RoundedCornerShape(6.dp))
+                .background(colors.primary.copy(alpha = 0.75f)),
         )
     }
 }
@@ -646,12 +758,12 @@ private fun ElementTypeSelector(
     }
 }
 
-/** A horizontal strip of matching character names shown above the bar for a focused CHARACTER line. */
+/** A horizontal strip of SmartType suggestions shown above the bar for the focused line. */
 @Composable
-private fun CharacterSuggestionBar(field: FocusedField?, names: List<String>) {
-    if (field == null || names.isEmpty()) return
+private fun SuggestionBar(field: FocusedField?, candidates: List<String>) {
+    if (field == null || candidates.isEmpty()) return
     val current = field.getValue().text.trim()
-    val matches = names.filter {
+    val matches = candidates.filter {
         it.startsWith(current, ignoreCase = true) && !it.equals(current, ignoreCase = true)
     }.take(6)
     if (matches.isEmpty()) return
@@ -767,11 +879,17 @@ private fun SearchBar(
     }
 }
 
-private fun textStyleFor(type: ElementType, onSurface: Color, primary: Color): TextStyle {
+private fun textStyleFor(type: ElementType, onSurface: Color, primary: Color, fontSize: Int): TextStyle {
     val base = TextStyle(
         fontFamily = FontFamily.Monospace,
         color = onSurface,
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * 1.25f).sp,
         platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both,
+        ),
     )
     return when (type) {
         ElementType.SCENE_HEADING -> base.copy(fontWeight = FontWeight.Bold, color = primary)
