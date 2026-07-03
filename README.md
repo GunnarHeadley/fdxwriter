@@ -12,6 +12,10 @@ FDX Writer opens real Final Draft files, lets you edit the screenplay, beat boar
   <img src="docs/beat_board_example.png" alt="Beat board with draggable, colour-coded cards" width="45%">
 </p>
 
+## Download
+
+Grab the latest APK from the [**Releases**](https://github.com/GunnarHeadley/fdxwriter/releases) page and install it on any device running **Android 7.0 (API 24)** or newer. The current build is an early **pre-release** (`v0.1.0`) — the first time you sideload it you'll need to allow "install unknown apps" for your browser or file manager.
+
 ## Features
 
 - **Open, create, and save `.fdx`** files via the Android Storage Access Framework — edit in place or start a new blank script.
