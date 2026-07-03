@@ -19,3 +19,8 @@ local.properties
 buildlog.txt
 testlog.txt
 gitlog.txt
+
+# Release signing — keep private, never commit
+keystore.properties
+*.jks
+*.keystore
