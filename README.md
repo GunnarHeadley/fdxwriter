@@ -17,12 +17,17 @@ FDX Writer opens real Final Draft files, lets you edit the screenplay, beat boar
 - **Open, create, and save `.fdx`** files via the Android Storage Access Framework — edit in place or start a new blank script.
 - **Screenplay editor** with the usual element types (Scene Heading, Action, Character, Dialogue, Parenthetical, Transition…), screenplay-style layout, and rich text (**bold** / *italic* / underline).
 - **Final Draft–style editing** — element switching, Enter creates the next logical element, and Backspace on an empty line merges it into the previous one.
-- **Beat board** — a pannable, zoomable canvas of draggable beat cards using Final Draft's colour palette.
-- **Script notes** — review, add, edit, and remove notes; they're highlighted inline in the script and can be added straight from the text-selection menu.
-- **Undo / redo** and **auto-save** with a configurable interval.
-- **Search** and **find / replace** across the whole script.
-- **Character-name autofill** drawn from names already used in the script.
+- **SmartType suggestions** — autocompletes character names, scene-heading openers (`INT.` / `EXT.`), and common transitions, drawn from your script and standard conventions.
 - **Colour-coded character names** — each speaker gets a consistent colour so scenes are easy to scan (toggle in settings).
+- **Scene outline** — jump straight to any scene from a quick list.
+- **Beat board** — a pannable, zoomable canvas of draggable, resizable beat cards using Final Draft's colour palette.
+- **Script notes** — review, add, edit, and remove notes; they're highlighted inline in the script and can be added straight from the text-selection menu.
+- **Search** and **find / replace** across the whole script.
+- **Statistics** — scene, word, and estimated page counts, plus dialogue blocks per character.
+- **PDF export** — outputs a standard Courier screenplay layout on US-Letter pages.
+- **Undo / redo** and **auto-save** with a configurable interval.
+- **Change-safe saving** — detects when the file was edited elsewhere (e.g. a cloud-synced copy open in Final Draft) and offers to reload, overwrite, or save a copy instead of silently clobbering it.
+- **Settings** — adjustable editor text size and a light / dark / system theme.
 - **Net-change tracking** — Save only enables when the document actually differs from what's on disk.
 
 ## Tech stack
@@ -40,13 +45,15 @@ The guiding principle is a **lossless DOM round-trip**: the entire `.fdx` XML is
 ```
 app/src/main/java/com/gunnarheadley/fdxwriter/
 ├── data/
-│   ├── fdx/     # FDX model, parser, serializer, offset mapping, colours, text edits
-│   └── repo/    # ScriptRepository (SAF I/O), SettingsStore, RecentFilesStore (DataStore)
+│   ├── fdx/     # FDX model, parser, serializer, offset mapping, colours, stats, text edits
+│   ├── repo/    # ScriptRepository (SAF I/O), SettingsStore, RecentFilesStore (DataStore)
+│   └── export/  # PDF exporter
 └── ui/
     ├── editor/      # screenplay editor, format bar, rich-text codec
     ├── beatboard/   # beat board canvas
     ├── notes/       # notes list + note editor
     ├── settings/    # settings screen
+    ├── common/      # shared UI (colour picker)
     ├── theme/       # Compose theme
     └── AppScreen · HomeScreen · ScriptViewModel
 ```
@@ -80,7 +87,7 @@ The pure logic — FDX parse / serialize / round-trip, offset mapping, and find/
 ## Limitations
 
 - Editing a paragraph preserves **bold / italic / underline**; other Final Draft run attributes (font, size, colour) on an edited paragraph are not user-editable.
-- Export, print/PDF, and repagination are out of scope.
+- **PDF export** uses a standard Courier layout and approximates page breaks — it isn't Final Draft's exact repagination.
 
 ## License
 
