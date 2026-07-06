@@ -3,7 +3,6 @@ package com.gunnarheadley.fdxwriter.data.repo
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.system.ErrnoException
 import android.system.Os
@@ -15,14 +14,16 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
+import java.security.MessageDigest
 
-/** A lightweight fingerprint of a document on disk, used to detect external modification. */
-data class DocumentStamp(val lastModified: Long, val size: Long) {
+/** A content fingerprint of a document on disk (a hash of its bytes), used to detect external modification. */
+data class DocumentStamp(val contentHash: String) {
     companion object {
         /**
          * True when the file changed on disk between [opened] (captured at open/last save) and
-         * [current]. Best-effort: if either stamp is unknown (null), assume no external change
-         * rather than block saving.
+         * [current]. Content-based rather than timestamp-based, so a cloud provider that re-stamps
+         * the modified time after our own save doesn't look like an external edit. Best-effort: if
+         * either fingerprint is unknown (null), assume no external change rather than block saving.
          */
         fun isExternallyModified(opened: DocumentStamp?, current: DocumentStamp?): Boolean =
             opened != null && current != null && current != opened
@@ -84,24 +85,25 @@ class ScriptRepository(context: Context) {
     }
 
     /**
-     * Best-effort last-modified + size fingerprint for [uri]. Returns null if the provider
-     * doesn't report either (some do not), in which case external-change detection is skipped.
+     * Best-effort content fingerprint for [uri] (a SHA-256 hash of the file's bytes). Returns null
+     * if the file can't be read, in which case external-change detection is skipped. Hashing the
+     * content (rather than trusting last-modified) means our own saves never look like an external
+     * edit even when a cloud provider bumps the modified time afterwards.
      */
-    fun stamp(uri: Uri): DocumentStamp? = try {
-        appContext.contentResolver.query(
-            uri,
-            arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_SIZE),
-            null, null, null,
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val lastModified = if (cursor.isNull(0)) 0L else cursor.getLong(0)
-                val size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
-                if (lastModified <= 0L && size < 0L) null else DocumentStamp(lastModified, size)
-            } else {
-                null
+    suspend fun stamp(uri: Uri): DocumentStamp? = withContext(Dispatchers.IO) {
+        try {
+            appContext.contentResolver.openInputStream(uri)?.use { input ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+                DocumentStamp(digest.digest().joinToString("") { "%02x".format(it) })
             }
+        } catch (e: Exception) {
+            null
         }
-    } catch (e: Exception) {
-        null
     }
 }

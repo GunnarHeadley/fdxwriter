@@ -22,6 +22,7 @@ data class AppSettings(
     val characterColorsEnabled: Boolean = true,
     val editorFontSize: Int = 16,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val showPageBreaks: Boolean = false,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -38,6 +39,7 @@ class SettingsStore(context: Context) {
             characterColorsEnabled = prefs[CHARACTER_COLORS] ?: true,
             editorFontSize = prefs[EDITOR_FONT_SIZE] ?: 16,
             themeMode = prefs[THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
+            showPageBreaks = prefs[SHOW_PAGE_BREAKS] ?: false,
         )
     }
 
@@ -65,6 +67,10 @@ class SettingsStore(context: Context) {
         dataStore.edit { it[THEME_MODE] = mode.name }
     }
 
+    suspend fun setShowPageBreaks(enabled: Boolean) {
+        dataStore.edit { it[SHOW_PAGE_BREAKS] = enabled }
+    }
+
     companion object {
         const val MIN_INTERVAL = 10
         const val MAX_INTERVAL = 3600
@@ -76,5 +82,6 @@ class SettingsStore(context: Context) {
         private val CHARACTER_COLORS = booleanPreferencesKey("character_colors_enabled")
         private val EDITOR_FONT_SIZE = intPreferencesKey("editor_font_size")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val SHOW_PAGE_BREAKS = booleanPreferencesKey("show_page_breaks")
     }
 }

@@ -6,21 +6,16 @@ import org.junit.Test
 
 class DocumentStampTest {
 
-    private val base = DocumentStamp(lastModified = 1000L, size = 500L)
+    private val base = DocumentStamp(contentHash = "hash-A")
 
     @Test
     fun unchangedWhenStampsAreEqual() {
-        assertFalse(DocumentStamp.isExternallyModified(base, DocumentStamp(1000L, 500L)))
+        assertFalse(DocumentStamp.isExternallyModified(base, DocumentStamp("hash-A")))
     }
 
     @Test
-    fun changedWhenLastModifiedDiffers() {
-        assertTrue(DocumentStamp.isExternallyModified(base, DocumentStamp(2000L, 500L)))
-    }
-
-    @Test
-    fun changedWhenSizeDiffers() {
-        assertTrue(DocumentStamp.isExternallyModified(base, DocumentStamp(1000L, 999L)))
+    fun changedWhenContentHashDiffers() {
+        assertTrue(DocumentStamp.isExternallyModified(base, DocumentStamp("hash-B")))
     }
 
     @Test

@@ -55,4 +55,18 @@ class ScriptStatsTest {
         assertEquals(1, stats.estimatedPages)
         assertEquals(emptyList<Pair<String, Int>>(), stats.dialogueByCharacter)
     }
+
+    @Test
+    fun pageStartsMarksParagraphBeginningEachNewPage() {
+        // Each empty ACTION paragraph is ~2 printed lines (1 wrapped + 1 lead); 53 lines per page,
+        // so line 54 (the 28th paragraph, index 27) is the first on page 2.
+        val paragraphs = List(30) { para(ElementType.ACTION, "") }
+        assertEquals(mapOf(27 to 2), ScriptStats.pageStarts(paragraphs))
+    }
+
+    @Test
+    fun pageStartsEmptyForShortScript() {
+        val paragraphs = List(3) { para(ElementType.ACTION, "Short line.") }
+        assertEquals(emptyMap<Int, Int>(), ScriptStats.pageStarts(paragraphs))
+    }
 }
