@@ -79,6 +79,47 @@ object RichText {
         return value.copy(annotatedString = build(anno.text, tokens))
     }
 
+    /** The B/I/U tokens applying immediately before [position] (empty for empty text). */
+    fun tokensAt(value: TextFieldValue, position: Int): Set<String> {
+        val anno = value.annotatedString
+        if (anno.text.isEmpty()) return emptySet()
+        val tokens = charTokens(anno)
+        val i = (position - 1).coerceIn(0, tokens.size - 1)
+        return tokens[i].toSet()
+    }
+
+    /**
+     * Rebuild [next]'s B/I/U styling from [old] so edits behave like a word processor: unchanged
+     * text keeps its formatting (even when a soft keyboard resends a composing word as plain text),
+     * deleting leaves the remaining formatting intact, and newly typed text takes [pending] when the
+     * user armed a style, otherwise inherits the character before it.
+     */
+    fun reconcileStyle(old: TextFieldValue, next: TextFieldValue, pending: Set<String>?): TextFieldValue {
+        val oldAnno = old.annotatedString
+        val oldText = oldAnno.text
+        val nextText = next.text
+        val oldLen = oldText.length
+        val nextLen = nextText.length
+        if (nextLen == 0) return next
+        val oldTokens = charTokens(oldAnno)
+        // Longest common prefix and (non-overlapping) suffix of the old and new text.
+        val maxPrefix = minOf(oldLen, nextLen)
+        var p = 0
+        while (p < maxPrefix && oldText[p] == nextText[p]) p++
+        var s = 0
+        while (s < maxPrefix - p && oldText[oldLen - 1 - s] == nextText[nextLen - 1 - s]) s++
+        val newStyle: Set<String> = pending ?: if (p > 0) oldTokens[p - 1] else emptySet()
+        val per = ArrayList<Set<String>>(nextLen)
+        for (i in 0 until nextLen) {
+            per += when {
+                i < p -> oldTokens[i]                            // unchanged prefix keeps its style
+                i >= nextLen - s -> oldTokens[oldLen - (nextLen - i)] // unchanged suffix keeps its style
+                else -> newStyle                                 // inserted/changed run
+            }
+        }
+        return next.copy(annotatedString = build(nextText, per))
+    }
+
     fun isTokenActive(value: TextFieldValue, token: String): Boolean {
         val anno = value.annotatedString
         if (anno.text.isEmpty()) return false

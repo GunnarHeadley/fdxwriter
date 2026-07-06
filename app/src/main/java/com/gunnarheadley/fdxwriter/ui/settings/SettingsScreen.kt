@@ -92,6 +92,23 @@ fun SettingsScreen(viewModel: ScriptViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
+                    "Show approximate page breaks",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Switch(
+                    checked = settings.showPageBreaks,
+                    onCheckedChange = { viewModel.setShowPageBreaks(it) },
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
                     "Auto-save",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,

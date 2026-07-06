@@ -17,6 +17,8 @@ import com.gunnarheadley.fdxwriter.data.fdx.StyledRun
 import com.gunnarheadley.fdxwriter.data.fdx.TextEdits
 import com.gunnarheadley.fdxwriter.data.repo.AppSettings
 import com.gunnarheadley.fdxwriter.data.repo.DocumentStamp
+import com.gunnarheadley.fdxwriter.data.repo.EditorPosition
+import com.gunnarheadley.fdxwriter.data.repo.EditorPositionStore
 import com.gunnarheadley.fdxwriter.data.repo.RecentFile
 import com.gunnarheadley.fdxwriter.data.repo.RecentFilesStore
 import com.gunnarheadley.fdxwriter.data.repo.ScriptRepository
@@ -62,6 +64,7 @@ data class ScriptUiState(
     val isDirty: Boolean = false,
     val errorMessage: String? = null,
     val savedAt: Long? = null,
+    val reloadedAt: Long? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
 ) {
@@ -77,6 +80,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = ScriptRepository(application)
     private val recentFilesStore = RecentFilesStore(application)
     private val settingsStore = SettingsStore(application)
+    private val editorPositionStore = EditorPositionStore(application)
 
     private val _uiState = MutableStateFlow(ScriptUiState())
     val uiState: StateFlow<ScriptUiState> = _uiState.asStateFlow()
@@ -115,6 +119,21 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
 
     fun consumeReveal() {
         _revealRequest.value = null
+    }
+
+    private val _restoreScroll = MutableStateFlow<EditorPosition?>(null)
+
+    /** When a script opens, the scroll position to jump back to (null once consumed). */
+    val restoreScroll: StateFlow<EditorPosition?> = _restoreScroll.asStateFlow()
+
+    fun consumeRestoreScroll() {
+        _restoreScroll.value = null
+    }
+
+    /** Persist the editor's current scroll position for the open file. */
+    fun saveScrollPosition(index: Int, offset: Int) {
+        val uri = _uiState.value.uri?.toString() ?: return
+        viewModelScope.launch { editorPositionStore.set(uri, EditorPosition(index, offset)) }
     }
 
     // ---- Find / Replace ------------------------------------------------------------------
@@ -246,6 +265,10 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { settingsStore.setThemeMode(mode) }
     }
 
+    fun setShowPageBreaks(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setShowPageBreaks(enabled) }
+    }
+
     fun exportPdf(uri: Uri) {
         val doc = _uiState.value.document ?: return
         val title = _uiState.value.fileName?.substringBeforeLast(".") ?: "Screenplay"
@@ -295,7 +318,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         _search.value = SearchUiState()
     }
 
-    fun open(uri: Uri, persistPermission: Boolean = true) {
+    fun open(uri: Uri, persistPermission: Boolean = true, markReloaded: Boolean = false) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
@@ -305,7 +328,14 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
                 clearHistory()
                 savedModel = document.model
                 openedStamp = repository.stamp(uri)
-                _uiState.value = ScriptUiState(document = document, fileName = name, uri = uri)
+                val restore = editorPositionStore.get(uri.toString()) ?: EditorPosition(0, 0)
+                _uiState.value = ScriptUiState(
+                    document = document,
+                    fileName = name,
+                    uri = uri,
+                    reloadedAt = if (markReloaded) System.currentTimeMillis() else null,
+                )
+                _restoreScroll.value = restore
                 recentFilesStore.add(uri.toString(), name)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -359,7 +389,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
     fun reload() {
         val uri = _uiState.value.uri ?: return
         _saveConflict.value = false
-        open(uri, persistPermission = false)
+        open(uri, persistPermission = false, markReloaded = true)
     }
 
     fun clearConflict() {
@@ -379,6 +409,7 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
                 savedModel = document.model
                 openedStamp = repository.stamp(uri)
                 _uiState.value = ScriptUiState(document = document, fileName = name, uri = uri)
+                _restoreScroll.value = EditorPosition(0, 0)
                 recentFilesStore.add(uri.toString(), name)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -497,6 +528,32 @@ class ScriptViewModel(application: Application) : AndroidViewModel(application) 
         )
         commit(doc, list)
         return newKey
+    }
+
+    /**
+     * Accept a Character SmartType [name] for paragraph [key], then jump to its dialogue: focus the
+     * following Dialogue line if there already is one, otherwise insert a new empty Dialogue.
+     * Returns the dialogue paragraph's key to focus.
+     */
+    fun pickCharacterSuggestion(key: String, name: String): String? {
+        val doc = _uiState.value.document ?: return null
+        val list = doc.model.paragraphs.toMutableList()
+        val i = list.indexOfFirst { it.key == key }
+        if (i < 0) return null
+        list[i] = list[i].copy(runs = listOf(StyledRun(name)), dirty = true)
+        val next = list.getOrNull(i + 1)
+        val focusKey = if (next != null && next.type == ElementType.DIALOGUE) {
+            next.key
+        } else {
+            val newKey = "new-" + UUID.randomUUID().toString()
+            list.add(
+                i + 1,
+                ScreenplayParagraph(key = newKey, typeName = ElementType.DIALOGUE.fdxName, runs = emptyList(), dirty = true),
+            )
+            newKey
+        }
+        commit(doc, list)
+        return focusKey
     }
 
     // ---- Beat board ----------------------------------------------------------------------

@@ -9,11 +9,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gunnarheadley.fdxwriter.ui.beatboard.BeatBoardScreen
 import com.gunnarheadley.fdxwriter.ui.editor.EditorScreen
 import com.gunnarheadley.fdxwriter.ui.notes.NotesScreen
 import com.gunnarheadley.fdxwriter.ui.settings.SettingsScreen
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 
 private enum class OpenScreen { Editor, BeatBoard, Notes, Settings }
 
@@ -24,6 +27,22 @@ fun AppScreen(viewModel: ScriptViewModel) {
     var screen by remember { mutableStateOf(OpenScreen.Editor) }
     // Hoisted so the editor's scroll position survives navigating to Beat Board / Notes / Settings.
     val editorListState = rememberLazyListState()
+
+    // Resume each script where the user last left off, and keep the saved position current as they scroll.
+    val restoreScroll by viewModel.restoreScroll.collectAsStateWithLifecycle()
+    LaunchedEffect(restoreScroll) {
+        val pos = restoreScroll ?: return@LaunchedEffect
+        val maxIndex = (state.paragraphCount - 1).coerceAtLeast(0)
+        editorListState.scrollToItem(pos.index.coerceIn(0, maxIndex), pos.offset.coerceAtLeast(0))
+        viewModel.consumeRestoreScroll()
+    }
+    LaunchedEffect(state.uri) {
+        if (state.uri == null) return@LaunchedEffect
+        snapshotFlow { editorListState.firstVisibleItemIndex to editorListState.firstVisibleItemScrollOffset }
+            .drop(1) // ignore the list's pre-restore position
+            .debounce(500)
+            .collect { (index, offset) -> viewModel.saveScrollPosition(index, offset) }
+    }
 
     val openLauncher = rememberLauncherForActivityResult(OpenFdxDocument()) { uri ->
         uri?.let { viewModel.open(it) }

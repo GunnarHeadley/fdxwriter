@@ -1,7 +1,9 @@
 package com.gunnarheadley.fdxwriter.ui.editor
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
@@ -29,10 +31,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.material3.AlertDialog
@@ -79,6 +85,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -108,6 +115,8 @@ class FocusedField(
     val key: String,
     val getValue: () -> TextFieldValue,
     val setValue: (TextFieldValue) -> Unit,
+    val toggleToken: (String) -> Unit,
+    val isActive: (String) -> Boolean,
 )
 
 /** SmartType suggestions offered for scene headings and transitions. */
@@ -156,13 +165,16 @@ fun EditorScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val saveConflict by viewModel.saveConflict.collectAsStateWithLifecycle()
     val notes = document.model.notes
+    // Character SmartType suggestions, ordered most-recently-used first (by each name's latest cue).
     val characterNames = remember(document) {
-        paragraphs.asSequence()
-            .filter { it.type == ElementType.CHARACTER }
-            .map { it.plainText.trim() }
-            .filter { it.isNotEmpty() }
-            .distinctBy { it.uppercase() }
-            .toList()
+        val lastSeen = LinkedHashMap<String, Pair<String, Int>>()
+        paragraphs.forEachIndexed { index, p ->
+            if (p.type == ElementType.CHARACTER) {
+                val name = p.plainText.trim()
+                if (name.isNotEmpty()) lastSeen[name.uppercase()] = name to index
+            }
+        }
+        lastSeen.values.sortedByDescending { it.second }.map { it.first }
     }
     val sceneHeadingTexts = remember(document) {
         paragraphs.asSequence()
@@ -182,6 +194,7 @@ fun EditorScreen(
         }
     }
     val sceneHeadingCandidates = remember(sceneHeadingTexts) { SCENE_OPENERS + sceneHeadingTexts }
+    val pageStarts = remember(document) { ScriptStats.pageStarts(paragraphs) }
     var editingNote by remember { mutableStateOf<NoteAnnotation?>(null) }
     var pendingNoteEditId by remember { mutableStateOf<String?>(null) }
 
@@ -259,6 +272,9 @@ fun EditorScreen(
             showSaved = false
         }
     }
+    LaunchedEffect(state.reloadedAt) {
+        if (state.reloadedAt != null) snackbarHostState.showSnackbar("Reloaded")
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -316,6 +332,19 @@ fun EditorScreen(
                 SuggestionBar(
                     field = if (suggestionCandidates.isNotEmpty()) focusedField else null,
                     candidates = suggestionCandidates,
+                    onPick = { name ->
+                        if (focusedType == ElementType.CHARACTER) {
+                            // Commit the name and drop the caret straight into the dialogue below it.
+                            focusedKey?.let { key ->
+                                viewModel.pickCharacterSuggestion(key, name)?.let { dialogueKey ->
+                                    pendingCaret = 0
+                                    pendingFocusKey = dialogueKey
+                                }
+                            }
+                        } else {
+                            focusedField?.setValue(TextFieldValue(name, selection = TextRange(name.length)))
+                        }
+                    },
                 )
                 FormatBar(
                     focused = focusedField,
@@ -341,7 +370,10 @@ fun EditorScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                items(paragraphs, key = { it.key }) { para ->
+                itemsIndexed(paragraphs, key = { _, it -> it.key }) { index, para ->
+                    if (settings.showPageBreaks) {
+                        pageStarts[index]?.let { PageBreakMarker(it) }
+                    }
                     ParagraphRow(
                         paragraph = para,
                         notes = highlightsByKey[para.key].orEmpty(),
@@ -387,7 +419,7 @@ fun EditorScreen(
             )
             AnimatedVisibility(
                 visible = showSaved,
-                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 60.dp),
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.inverseSurface,
@@ -511,6 +543,7 @@ fun EditorScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ParagraphRow(
     paragraph: ScreenplayParagraph,
@@ -532,6 +565,10 @@ private fun ParagraphRow(
 ) {
     val tfvState = remember(paragraph.key) { mutableStateOf(RichText.toTextFieldValue(paragraph.runs)) }
     val focusRequester = remember { FocusRequester() }
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    // B/I/U armed for the next typed characters when nothing is selected (null = inherit surrounding style).
+    var pendingTokens by remember(paragraph.key) { mutableStateOf<Set<String>?>(null) }
     val colors = MaterialTheme.colorScheme
 
     LaunchedEffect(requestFocus) {
@@ -543,6 +580,8 @@ private fun ParagraphRow(
                 tfvState.value = merged.copy(selection = TextRange(target.coerceIn(0, merged.text.length)))
             }
             onFocusConsumed()
+            // Scroll a freshly focused line (e.g. a new line from Enter) into view.
+            bringIntoView.bringIntoView()
         }
     }
 
@@ -573,15 +612,25 @@ private fun ParagraphRow(
                     tfvState.value = TextFieldValue(beforeAnno, selection = TextRange(beforeAnno.length))
                     onSplit(RichText.annotatedToRuns(beforeAnno), RichText.annotatedToRuns(afterAnno))
                 } else {
-                    tfvState.value = newValue
+                    // Rebuild styling from the previous value so formatting survives soft-keyboard
+                    // composing rewrites: unchanged text keeps its B/I/U, deletions leave the rest
+                    // intact, and new text takes the armed style or inherits the preceding character.
+                    val next = if (newValue.text == old.text) newValue
+                    else RichText.reconcileStyle(old, newValue, pendingTokens)
+                    val inserted = next.text.length - old.text.length
+                    tfvState.value = next
                     // A pure cursor/selection move (unchanged text & styling) must not mark dirty.
-                    if (newValue.annotatedString != old.annotatedString) {
-                        onRunsChanged(RichText.annotatedToRuns(newValue.annotatedString))
+                    if (next.annotatedString != old.annotatedString) {
+                        onRunsChanged(RichText.annotatedToRuns(next.annotatedString))
                     }
-                    onSelectionChanged(newValue.selection.min, newValue.selection.max)
+                    onSelectionChanged(next.selection.min, next.selection.max)
+                    // A caret move or deletion (no insertion) disarms any pending B/I/U style.
+                    if (inserted <= 0) pendingTokens = null
+                    // Keep the caret visible while typing near the bottom of the script.
+                    scope.launch { bringIntoView.bringIntoView() }
                     // Tapping into a highlighted range (no text change) reveals its note.
-                    if (newValue.text.length == old.text.length && newValue.selection.collapsed) {
-                        val caret = newValue.selection.start
+                    if (next.text.length == old.text.length && next.selection.collapsed) {
+                        val caret = next.selection.start
                         val wasInside = notes.any { old.selection.start in it.start until it.end }
                         val hit = notes.firstOrNull { caret in it.start until it.end }
                         if (hit != null && !wasInside) onNoteTapped(hit.note)
@@ -595,9 +644,11 @@ private fun ParagraphRow(
                 highlights = notes.map { RichText.HighlightSpan(it.start, it.end, it.color) } + searchHighlights,
             ),
             cursorBrush = SolidColor(colors.primary),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             modifier = Modifier
                 .fillMaxWidth(widthFractionFor(paragraph.type))
                 .heightIn(min = 20.dp)
+                .bringIntoViewRequester(bringIntoView)
                 .onPreviewKeyEvent { ev ->
                     val sel = tfvState.value.selection
                     if (ev.type == KeyEventType.KeyDown && ev.key == Key.Backspace &&
@@ -636,6 +687,27 @@ private fun ParagraphRow(
                                     tfvState.value = v
                                     onRunsChanged(RichText.annotatedToRuns(v.annotatedString))
                                 },
+                                toggleToken = { token ->
+                                    val v = tfvState.value
+                                    if (v.selection.collapsed) {
+                                        // No selection: arm the style for the next typed characters.
+                                        val base = pendingTokens ?: RichText.tokensAt(v, v.selection.start)
+                                        pendingTokens = if (token in base) base - token else base + token
+                                    } else {
+                                        val toggled = RichText.toggleToken(v, token)
+                                        tfvState.value = toggled
+                                        onRunsChanged(RichText.annotatedToRuns(toggled.annotatedString))
+                                        pendingTokens = null
+                                    }
+                                },
+                                isActive = { token ->
+                                    val v = tfvState.value
+                                    if (v.selection.collapsed) {
+                                        (pendingTokens ?: RichText.tokensAt(v, v.selection.start)).contains(token)
+                                    } else {
+                                        RichText.isTokenActive(v, token)
+                                    }
+                                },
                             ),
                         )
                         val sel = tfvState.value.selection
@@ -643,6 +715,25 @@ private fun ParagraphRow(
                     }
                 },
         )
+    }
+}
+
+/** A faint divider marking where an approximate printed page would begin, with its page number. */
+@Composable
+private fun PageBreakMarker(page: Int) {
+    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f), color = color)
+        Text(
+            "Page $page",
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f), color = color)
     }
 }
 
@@ -654,6 +745,10 @@ private fun FastScrollbar(listState: LazyListState, modifier: Modifier = Modifie
     if (total == 0 || visible >= total) return
     val scope = rememberCoroutineScope()
     val colors = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    // Fade the scrollbar out while the keyboard is up (typing), and back in once it closes.
+    val typing = WindowInsets.ime.getBottom(density) > 0
+    val alpha by animateFloatAsState(if (typing) 0f else 1f, label = "scrollbarAlpha")
     BoxWithConstraints(
         modifier.pointerInput(total) {
             fun jumpTo(y: Float) {
@@ -679,7 +774,6 @@ private fun FastScrollbar(listState: LazyListState, modifier: Modifier = Modifie
             }
         },
     ) {
-        val density = LocalDensity.current
         val trackPx = with(density) { maxHeight.toPx() }
         val minThumbPx = with(density) { 48.dp.toPx() }
         val thumbFraction = (visible.toFloat() / total).coerceIn(0.08f, 1f)
@@ -695,7 +789,7 @@ private fun FastScrollbar(listState: LazyListState, modifier: Modifier = Modifie
                 .width(12.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(6.dp))
-                .background(colors.onSurface.copy(alpha = 0.12f)),
+                .background(colors.onSurface.copy(alpha = 0.12f * alpha)),
         )
         Box(
             Modifier
@@ -705,7 +799,7 @@ private fun FastScrollbar(listState: LazyListState, modifier: Modifier = Modifie
                 .width(12.dp)
                 .height(with(density) { thumbPx.toDp() })
                 .clip(RoundedCornerShape(6.dp))
-                .background(colors.primary.copy(alpha = 0.75f)),
+                .background(colors.primary.copy(alpha = 0.75f * alpha)),
         )
     }
 }
@@ -722,7 +816,6 @@ private fun FormatBar(
     onTypeChange: (ElementType) -> Unit,
     onDelete: () -> Unit,
 ) {
-    val value = focused?.getValue?.invoke()
     Surface(
         tonalElevation = 2.dp,
         shadowElevation = 6.dp,
@@ -746,16 +839,16 @@ private fun FormatBar(
                 Spacer(Modifier.weight(1f))
                 BarGlyphButton("\u21BA", enabled = canUndo, onClick = onUndo)
                 BarGlyphButton("\u21BB", enabled = canRedo, onClick = onRedo)
-                FormatToggle("B", StyledRun.BOLD, focused, value, weight = FontWeight.Bold)
-                FormatToggle("I", StyledRun.ITALIC, focused, value, style = FontStyle.Italic)
-                FormatToggle("U", StyledRun.UNDERLINE, focused, value, decoration = TextDecoration.Underline)
+                FormatToggle("B", StyledRun.BOLD, focused, weight = FontWeight.Bold)
+                FormatToggle("I", StyledRun.ITALIC, focused, style = FontStyle.Italic)
+                FormatToggle("U", StyledRun.UNDERLINE, focused, decoration = TextDecoration.Underline)
                 Spacer(Modifier.width(4.dp))
             }
         }
     }
 }
 
-/** Compact glyph button (undo / redo) sized to match the format toggles. */
+/** Glyph button (undo / redo): same footprint as the format toggles, but a larger glyph. */
 @Composable
 private fun BarGlyphButton(glyph: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
@@ -767,6 +860,9 @@ private fun BarGlyphButton(glyph: String, enabled: Boolean, onClick: () -> Unit)
     ) {
         Text(
             glyph,
+            fontSize = 22.sp,
+            // The rotational-arrow glyphs sit optically lower than the B/I/U letters; nudge up to align.
+            modifier = Modifier.offset(y = (-3).dp),
             color = if (enabled) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f),
         )
     }
@@ -800,7 +896,7 @@ private fun ElementTypeSelector(
 
 /** A horizontal strip of SmartType suggestions shown above the bar for the focused line. */
 @Composable
-private fun SuggestionBar(field: FocusedField?, candidates: List<String>) {
+private fun SuggestionBar(field: FocusedField?, candidates: List<String>, onPick: (String) -> Unit) {
     if (field == null || candidates.isEmpty()) return
     val current = field.getValue().text.trim()
     val matches = candidates.filter {
@@ -819,9 +915,7 @@ private fun SuggestionBar(field: FocusedField?, candidates: List<String>) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.clickable {
-                        field.setValue(TextFieldValue(name, selection = TextRange(name.length)))
-                    },
+                    modifier = Modifier.clickable { onPick(name) },
                 ) {
                     Text(
                         name,
@@ -840,22 +934,19 @@ private fun FormatToggle(
     label: String,
     token: String,
     focused: FocusedField?,
-    value: TextFieldValue?,
     weight: FontWeight? = null,
     style: FontStyle? = null,
     decoration: TextDecoration? = null,
 ) {
     val enabled = focused != null
-    val active = value != null && RichText.isTokenActive(value, token)
+    val active = focused?.isActive(token) == true
     val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (active) colors.secondaryContainer else Color.Transparent)
-            .clickable(enabled = enabled) {
-                focused?.let { it.setValue(RichText.toggleToken(it.getValue(), token)) }
-            },
+            .background(if (active) colors.primary else Color.Transparent)
+            .clickable(enabled = enabled) { focused?.toggleToken(token) },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -865,7 +956,7 @@ private fun FormatToggle(
             textDecoration = decoration,
             color = when {
                 !enabled -> LocalContentColor.current.copy(alpha = 0.38f)
-                active -> colors.onSecondaryContainer
+                active -> colors.onPrimary
                 else -> LocalContentColor.current
             },
         )
